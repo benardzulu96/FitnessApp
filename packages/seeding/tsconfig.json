@@ -1,0 +1,9 @@
+{
+  "extends": "@repo/config/tsconfig.json",
+  "compilerOptions": {
+    "moduleResolution": "bundler",
+    "module": "ESNext",
+    "outDir": "dist"
+  },
+  "include": ["src"]
+}
