@@ -42,5 +42,8 @@
     "*.{json,md,yaml,yml}": [
       "prettier --write"
     ]
+  },
+  "dependencies": {
+    "firebase": "^12.9.0"
   }
 }
