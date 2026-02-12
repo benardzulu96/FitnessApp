@@ -1,0 +1,8 @@
+{
+  "firestore": {
+    "database": "(default)",
+    "location": "africa-south1",
+    "rules": "service cloud.firestore {  match /databases/{database}/documents {        // Users can read/write their own profile    match /users/{userId} {      allow read, write: if request.auth != null && request.auth.uid == userId;    }    // Users can read/write their own workout sessions    match /workouts/{workoutId} {      allow read, write: if request.auth != null && request.auth.uid == resource.data.userId;    }    // Admin can read/write everything (optional)    match /{document=**} {      allow read, write: if request.auth.token.admin == true;    }  }}",
+    "indexes": "firestore.indexes.json"
+  }
+}
