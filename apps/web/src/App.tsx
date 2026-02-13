@@ -1,247 +1,240 @@
-/**
- * =============================================================================
- * WELCOME TO THE HYTEL WAY: MONOREPO STACK
- * =============================================================================
- *
- * This file demonstrates the key concepts of our tech stack using friendly
- * analogies. Think of building a web app like putting on a theater production!
- *
- * THE STACK EXPLAINED (Theater Analogy):
- *
- * PNPM (Package Manager)
- *    -> "The super-organized prop master"
- *    -> Manages all the tools/packages we need, storing them efficiently
- *    -> Unlike npm, it doesn't duplicate packages - saves space!
- *
- * TURBOREPO (Monorepo Build System)
- *    -> "The stage manager who coordinates everything"
- *    -> Runs tasks (build, test, dev) across multiple packages smartly
- *    -> Caches results so repeated tasks are lightning fast!
- *
- * REACT + VITE (Frontend Framework + Build Tool)
- *    -> "The stage and lighting system"
- *    -> React: Builds the interactive UI (the actors on stage)
- *    -> Vite: Super-fast dev server (instant lighting changes!)
- *
- * TAILWIND CSS + SHADCN UI (Styling)
- *    -> "The costume designer"
- *    -> Tailwind: Utility classes for quick styling (fabric swatches)
- *    -> Shadcn UI: Pre-made, beautiful component patterns (costume templates)
- *
- * @repo/ui (Shared Component Package)
- *    -> "The shared costume closet"
- *    -> Components here (Header, Button, Card) can be used by ANY app!
- *    -> Located in: packages/ui/
- *
- * @repo/shared (Shared Types & Schemas)
- *    -> "The spellbook of shared rules"
- *    -> Zod schemas define what data looks like (validation spells!)
- *    -> Located in: packages/shared/
- *
- * tRPC + TanStack Query (API Layer)
- *    -> "The messenger system between actors"
- *    -> tRPC: Type-safe communication with backend (no lost messages!)
- *    -> TanStack Query: Smart caching of server data (remembers the script!)
- *
- * =============================================================================
- */
-
-import { useState } from 'react'
 import './style.css'
 
-// Importing from @repo/ui - the "shared component closet"
-// These components live in packages/ui/ and can be used by any app!
-import { Header } from '@repo/ui/Header'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { useMutation } from '@tanstack/react-query'
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
+import { useState } from 'react'
+import { useForm, useFieldArray } from 'react-hook-form'
+import { z } from 'zod'
+
+import type { CreateWorkout } from '@repo/shared/schemas'
+import { CreateWorkoutSchema } from '@repo/shared/schemas'
 import { Button } from '@repo/ui/Button'
 import {
   Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
-  CardDescription,
-  CardContent,
-  CardFooter,
 } from '@repo/ui/Card'
+import { Input } from '@repo/ui/Input'
+import { Label } from '@repo/ui/Label'
+import { auth, db } from './lib/firebase'
 
-// Assets
-import viteLogo from '/vite.svg'
-import reactLogo from '/react.svg'
+type WorkoutFormValues = z.infer<typeof CreateWorkoutSchema>
 
-/**
- * Main App Component
- *
- * This is the "main stage" of our application. Everything you see
- * in the browser starts here!
- */
 export function App() {
-  // React State - like a scoreboard that updates the display automatically
-  const [count, setCount] = useState(0)
+  const [userId] = useState<string>(() => auth.currentUser?.uid ?? 'demo-user-uid')
+
+  const form = useForm<WorkoutFormValues>({
+    resolver: zodResolver(CreateWorkoutSchema),
+    defaultValues: {
+      userId,
+      startedAt: new Date(),
+      endedAt: null,
+      durationMinutes: 0,
+      exercises: [
+        {
+          id: crypto.randomUUID(),
+          name: '',
+          sets: 3,
+          reps: 10,
+          weight: null,
+        },
+      ],
+      notes: '',
+    },
+  })
+
+  const { fields, append, remove } = useFieldArray({
+    control: form.control,
+    name: 'exercises',
+  })
+
+  const createWorkout = useMutation({
+    mutationFn: async (values: WorkoutFormValues) => {
+      const startedAt = values.startedAt
+      const endedAt = values.endedAt ?? new Date()
+      const durationMinutes =
+        values.durationMinutes ||
+        Math.max(0, Math.round((endedAt.getTime() - startedAt.getTime()) / 60000))
+
+      const payload: Omit<CreateWorkout, 'startedAt' | 'endedAt'> & {
+        startedAt: ReturnType<typeof serverTimestamp>
+        endedAt: ReturnType<typeof serverTimestamp>
+      } = {
+        userId: values.userId,
+        exercises: values.exercises,
+        notes: values.notes,
+        durationMinutes,
+        startedAt: serverTimestamp(),
+        endedAt: serverTimestamp(),
+      }
+
+      await addDoc(collection(db, 'workouts'), payload)
+    },
+  })
+
+  const onSubmit = (values: WorkoutFormValues) => {
+    createWorkout.mutate(values, {
+      onSuccess: () => {
+        form.reset({
+          userId,
+          startedAt: new Date(),
+          endedAt: null,
+          durationMinutes: 0,
+          exercises: [
+            {
+              id: crypto.randomUUID(),
+              name: '',
+              sets: 3,
+              reps: 10,
+              weight: null,
+            },
+          ],
+          notes: '',
+        })
+      },
+    })
+  }
 
   return (
-    <div className="min-h-screen py-8 px-4">
-      {/* 
-        Header Component from @repo/ui
-        This comes from our shared "costume closet" (packages/ui)
-        Any app in the monorepo can use this same Header!
-      */}
-      <Header title="The Hytel Way" />
+    <div className="min-h-screen bg-background py-6 px-4">
+      <div className="mx-auto flex w-full max-w-md flex-col gap-4">
+        <header className="text-center">
+          <h1 className="text-2xl font-bold tracking-tight">MY BENEFIT – Workout Logger</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Log exercises, sets, reps, and weight for each workout.
+          </p>
+        </header>
 
-      {/* Logo Section */}
-      <div className="flex justify-center gap-8 my-8">
-        <a href="https://vitejs.dev" target="_blank" rel="noopener noreferrer">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank" rel="noopener noreferrer">
-          <img src={reactLogo} className="logo" alt="React logo" />
-        </a>
-      </div>
-
-      {/* Main Content Grid */}
-      <div className="max-w-4xl mx-auto grid gap-6 md:grid-cols-2">
-        {/* 
-          Interactive Counter Card
-          Demonstrates React state + Shadcn UI components
-        */}
-        <Card>
+        <Card className="w-full">
           <CardHeader>
-            <CardTitle>Interactive Counter</CardTitle>
-            <CardDescription>
-              Click the buttons to change the count. This demonstrates React state management - when
-              count changes, the UI updates automatically!
-            </CardDescription>
+            <CardTitle>New Workout</CardTitle>
+            <CardDescription>Mobile-friendly form for quick workout logging.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-center">
-              <p className="text-6xl font-bold text-primary mb-6">{count}</p>
-              <div className="flex justify-center gap-4">
-                {/* 
-                  Shadcn UI Buttons
-                  These come from packages/ui/components/ui/button.tsx
-                  The "variant" prop changes the button style (like costume options!)
-                */}
-                <Button
-                  variant="outline"
-                  size="lg"
-                  onClick={() => setCount(c => c - 1)}
-                  aria-label="Decrement counter"
-                >
-                  - Decrease
-                </Button>
-                <Button
-                  variant="default"
-                  size="lg"
-                  onClick={() => setCount(c => c + 1)}
-                  aria-label="Increment counter"
-                >
-                  + Increase
-                </Button>
+            <form className="space-y-6" onSubmit={form.handleSubmit(onSubmit)}>
+              <div className="space-y-2">
+                <Label htmlFor="notes">Notes (optional)</Label>
+                <Input
+                  id="notes"
+                  placeholder="Upper body strength focus..."
+                  {...form.register('notes')}
+                />
               </div>
-            </div>
-          </CardContent>
-          <CardFooter className="justify-center">
-            <Button variant="ghost" onClick={() => setCount(0)}>
-              Reset to Zero
-            </Button>
-          </CardFooter>
-        </Card>
 
-        {/* 
-          Stack Info Card
-          Educational content about the monorepo structure
-        */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Stack Overview</CardTitle>
-            <CardDescription>
-              What powers this template? Here's the cast of characters!
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="flex items-start gap-2">
-              <div>
-                <strong>pnpm</strong> - Fast, disk-efficient package manager
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <div>
-                <strong>Turborepo</strong> - Smart monorepo build system
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <div>
-                <strong>React + Vite</strong> - Fast UI development
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <div>
-                <strong>Tailwind + Shadcn</strong> - Beautiful styling
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <div>
-                <strong>tRPC</strong> - Type-safe API layer
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <div>
-                <strong>TanStack Query</strong> - Server state management
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label>Exercises</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      append({
+                        id: crypto.randomUUID(),
+                        name: '',
+                        sets: 3,
+                        reps: 10,
+                        weight: null,
+                      })
+                    }
+                  >
+                    Add exercise
+                  </Button>
+                </div>
 
-        {/* 
-          Monorepo Structure Card
-        */}
-        <Card className="md:col-span-2">
-          <CardHeader>
-            <CardTitle>Monorepo Structure</CardTitle>
-            <CardDescription>Where to find things in this project</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid md:grid-cols-2 gap-6 text-sm font-mono">
-              <div>
-                <h4 className="font-bold text-primary mb-2">apps/</h4>
-                <ul className="space-y-1 text-muted-foreground">
-                  <li>
-                    |-- web/ <span className="text-xs">(this React app)</span>
-                  </li>
-                  <li>
-                    |-- functions/ <span className="text-xs">(tRPC backend)</span>
-                  </li>
-                </ul>
+                <div className="flex flex-col gap-3">
+                  {fields.map((field, index) => (
+                    <div key={field.id} className="rounded-lg border bg-card p-3 shadow-sm">
+                      <div className="flex items-center justify-between gap-2">
+                        <Label className="text-xs">Exercise {index + 1}</Label>
+                        {fields.length > 1 ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => remove(index)}
+                          >
+                            Remove
+                          </Button>
+                        ) : null}
+                      </div>
+
+                      <div className="mt-2 space-y-2">
+                        <Input
+                          placeholder="Bench Press"
+                          {...form.register(`exercises.${index}.name`)}
+                        />
+                        <div className="grid grid-cols-3 gap-2">
+                          <Input
+                            type="number"
+                            min={1}
+                            inputMode="numeric"
+                            placeholder="Sets"
+                            {...form.register(`exercises.${index}.sets`, {
+                              valueAsNumber: true,
+                            })}
+                          />
+                          <Input
+                            type="number"
+                            min={1}
+                            inputMode="numeric"
+                            placeholder="Reps"
+                            {...form.register(`exercises.${index}.reps`, {
+                              valueAsNumber: true,
+                            })}
+                          />
+                          <Input
+                            type="number"
+                            min={0}
+                            step="0.5"
+                            inputMode="decimal"
+                            placeholder="Weight"
+                            {...form.register(`exercises.${index}.weight`, {
+                              setValueAs: (value: string) => (value === '' ? null : Number(value)),
+                            })}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div>
-                <h4 className="font-bold text-primary mb-2">packages/</h4>
-                <ul className="space-y-1 text-muted-foreground">
-                  <li>
-                    |-- ui/ <span className="text-xs">(shared components)</span>
-                  </li>
-                  <li>
-                    |-- shared/ <span className="text-xs">(Zod schemas)</span>
-                  </li>
-                  <li>
-                    |-- config/ <span className="text-xs">(TypeScript config)</span>
-                  </li>
-                </ul>
+
+              <div className="space-y-1">
+                <Label htmlFor="durationMinutes">Duration (minutes, optional)</Label>
+                <Input
+                  id="durationMinutes"
+                  type="number"
+                  min={0}
+                  inputMode="numeric"
+                  placeholder="Auto-calculated if left empty"
+                  {...form.register('durationMinutes', {
+                    valueAsNumber: true,
+                  })}
+                />
               </div>
-            </div>
+
+              <CardFooter className="flex flex-col gap-2 px-0">
+                <Button type="submit" className="w-full" disabled={createWorkout.isPending}>
+                  {createWorkout.isPending ? 'Saving...' : 'Save Workout'}
+                </Button>
+                {createWorkout.isError ? (
+                  <p className="text-xs text-destructive">
+                    Failed to save workout. Please try again.
+                  </p>
+                ) : null}
+                {createWorkout.isSuccess ? (
+                  <p className="text-xs text-emerald-600">Workout saved to Firestore.</p>
+                ) : null}
+              </CardFooter>
+            </form>
           </CardContent>
-          <CardFooter className="justify-center gap-4">
-            <a href="https://turbo.build/repo/docs" target="_blank" rel="noopener noreferrer">
-              <Button variant="secondary">Turborepo Docs</Button>
-            </a>
-            <a href="https://ui.shadcn.com" target="_blank" rel="noopener noreferrer">
-              <Button variant="secondary">Shadcn UI Docs</Button>
-            </a>
-          </CardFooter>
         </Card>
       </div>
-
-      {/* Footer */}
-      <p className="text-center text-muted-foreground mt-8 text-sm">
-        Edit <code className="bg-muted px-1 rounded">apps/web/src/App.tsx</code> and save to see hot
-        reload in action!
-      </p>
     </div>
   )
 }
