@@ -3,10 +3,13 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
+    ".": "./index.ts",
     "./Header": "./components/Header.tsx",
     "./Counter": "./components/Counter.tsx",
     "./Button": "./components/ui/button.tsx",
     "./Card": "./components/ui/card.tsx",
+    "./Input": "./components/ui/input.tsx",
+    "./Label": "./components/ui/label.tsx",
     "./utils": "./lib/utils.ts"
   },
   "scripts": {

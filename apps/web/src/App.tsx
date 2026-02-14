@@ -9,17 +9,17 @@ import { z } from 'zod'
 
 import type { CreateWorkout } from '@repo/shared/schemas'
 import { CreateWorkoutSchema } from '@repo/shared/schemas'
-import { Button } from '@repo/ui/Button'
 import {
+  Button,
   Card,
   CardContent,
   CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
-} from '@repo/ui/Card'
-import { Input } from '@repo/ui/Input'
-import { Label } from '@repo/ui/Label'
+  Input,
+  Label,
+} from '@repo/ui'
 import { auth, db } from './lib/firebase'
 
 type WorkoutFormValues = z.infer<typeof CreateWorkoutSchema>

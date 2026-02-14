@@ -1,9 +1,14 @@
 {
-  "extends": "@repo/config/tsconfig.json",
+  "extends": "@repo/typescript-config/base.json",
   "compilerOptions": {
     "moduleResolution": "bundler",
     "module": "ESNext",
     "outDir": "dist"
   },
-  "include": ["src"]
+  "include": ["src"],
+  "references": [
+    {
+      "path": "../shared"
+    }
+  ]
 }
