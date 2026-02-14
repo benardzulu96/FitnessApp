@@ -13,10 +13,11 @@ import {
 } from 'firebase/firestore'
 import { useEffect, useMemo, useState } from 'react'
 import { useForm, useFieldArray } from 'react-hook-form'
-import { z } from 'zod'
+// zod imported in schema files; not used directly here
 
-import type { CreateWorkout } from '@repo/shared/schemas'
+import type { CreateWorkout, WorkoutExercise } from '@repo/shared/schemas'
 import { CreateWorkoutSchema } from '@repo/shared/schemas'
+import type { DocumentData } from 'firebase/firestore'
 import {
   Button,
   Card,
@@ -35,18 +36,32 @@ type WorkoutDocument = Omit<CreateWorkout, 'startedAt' | 'endedAt'> & {
   id: string
   startedAt: Date | null
   endedAt: Date | null
+  workoutType: 'Cardio' | 'Strength' | 'Flexibility' | 'Sports'
+  intensity: 'Light' | 'Moderate' | 'Hard' | 'Very Hard'
+  location: 'Gym' | 'Home' | 'Outdoor'
+  mood: 'Energized' | 'Normal' | 'Tired' | 'Exhausted'
+  caloriesBurned?: number
+  personalRecords: string[]
 }
 
-function toClientWorkout(id: string, data: any): WorkoutDocument {
-  const startedAt = data.startedAt?.toDate ? data.startedAt.toDate() : data.startedAt ?? null
-  const endedAt = data.endedAt?.toDate ? data.endedAt.toDate() : data.endedAt ?? null
+function toClientWorkout(id: string, data: DocumentData): WorkoutDocument {
+  const startedAt = data.startedAt?.toDate
+    ? data.startedAt.toDate()
+    : (data.startedAt as Date) ?? null
+  const endedAt = data.endedAt?.toDate ? data.endedAt.toDate() : (data.endedAt as Date) ?? null
 
   return {
     id,
-    userId: data.userId,
-    exercises: data.exercises ?? [],
-    notes: data.notes ?? '',
-    durationMinutes: data.durationMinutes ?? 0,
+    userId: String(data.userId ?? ''),
+    workoutType: String(data.workoutType ?? 'Strength') as WorkoutDocument['workoutType'],
+    intensity: String(data.intensity ?? 'Moderate') as WorkoutDocument['intensity'],
+    location: String(data.location ?? 'Gym') as WorkoutDocument['location'],
+    mood: String(data.mood ?? 'Normal') as WorkoutDocument['mood'],
+    caloriesBurned: data.caloriesBurned == null ? undefined : Number(data.caloriesBurned),
+    personalRecords: (data.personalRecords as string[]) ?? [],
+    exercises: (data.exercises as WorkoutExercise[]) ?? [],
+    notes: String(data.notes ?? ''),
+    durationMinutes: Number(data.durationMinutes ?? 0),
     startedAt,
     endedAt,
   }
@@ -59,6 +74,8 @@ export function App() {
   const [editing, setEditing] = useState<WorkoutDocument | null>(null)
   const [deleting, setDeleting] = useState<WorkoutDocument | null>(null)
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [createPRText, setCreatePRText] = useState('')
+  const [editPRText, setEditPRText] = useState('')
 
   const { data: workouts = [], isLoading } = useQuery<WorkoutDocument[]>({
     queryKey: ['workouts'],
@@ -88,7 +105,8 @@ export function App() {
       setIsCreateOpen(false)
       setToast({ type: 'success', message: 'Workout created' })
     },
-    onError: (e: any) => setToast({ type: 'error', message: e?.message ?? 'Create failed' }),
+    onError: (e: unknown) =>
+      setToast({ type: 'error', message: (e as Error)?.message ?? 'Create failed' }),
   })
 
   const updateMutation = useMutation<void, unknown, { id: string; values: CreateWorkout }>({
@@ -100,7 +118,8 @@ export function App() {
       setEditing(null)
       setToast({ type: 'success', message: 'Workout updated' })
     },
-    onError: (e: any) => setToast({ type: 'error', message: e?.message ?? 'Update failed' }),
+    onError: (e: unknown) =>
+      setToast({ type: 'error', message: (e as Error)?.message ?? 'Update failed' }),
   })
 
   const deleteMutation = useMutation<void, unknown, string>({
@@ -112,7 +131,8 @@ export function App() {
       setDeleting(null)
       setToast({ type: 'success', message: 'Workout deleted' })
     },
-    onError: (e: any) => setToast({ type: 'error', message: e?.message ?? 'Delete failed' }),
+    onError: (e: unknown) =>
+      setToast({ type: 'error', message: (e as Error)?.message ?? 'Delete failed' }),
   })
 
   // Filtered results based on search
@@ -122,7 +142,7 @@ export function App() {
     return workouts.filter((w: WorkoutDocument) => {
       if (w.notes?.toLowerCase().includes(q)) return true
       if (
-        w.exercises?.some((e: any) =>
+        w.exercises?.some((e: WorkoutExercise) =>
           String(e.name ?? '')
             .toLowerCase()
             .includes(q)
@@ -143,6 +163,12 @@ export function App() {
       durationMinutes: 0,
       exercises: [{ id: crypto.randomUUID(), name: '', sets: 3, reps: 10, weight: null }],
       notes: '',
+      workoutType: 'Strength',
+      intensity: 'Moderate',
+      location: 'Gym',
+      mood: 'Normal',
+      caloriesBurned: undefined,
+      personalRecords: [],
     },
   })
 
@@ -156,7 +182,15 @@ export function App() {
   })
 
   const onCreateSubmit = (values: CreateWorkout) => {
-    createMutation.mutate(values)
+    const prs = createPRText
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
+    const payload: CreateWorkout = {
+      ...values,
+      personalRecords: prs,
+    }
+    createMutation.mutate(payload)
   }
 
   // Edit form
@@ -172,18 +206,38 @@ export function App() {
 
   useEffect(() => {
     if (editing) {
-      // convert dates back to Date for form
-      editForm.reset({
-        ...editing,
+      // convert editing document to CreateWorkout shape for the form
+      const editValues: CreateWorkout = {
+        userId: editing.userId,
         startedAt: editing.startedAt ?? new Date(),
         endedAt: editing.endedAt ?? null,
-      } as any)
+        durationMinutes: editing.durationMinutes,
+        exercises: (editing.exercises ?? []) as WorkoutExercise[],
+        notes: editing.notes ?? '',
+        workoutType: editing.workoutType,
+        intensity: editing.intensity,
+        location: editing.location,
+        mood: editing.mood,
+        caloriesBurned: editing.caloriesBurned,
+        personalRecords: editing.personalRecords ?? [],
+      }
+
+      editForm.reset(editValues)
+      setEditPRText((editing.personalRecords ?? []).join(', '))
     }
   }, [editing])
 
   const onEditSubmit = (values: CreateWorkout) => {
     if (!editing) return
-    updateMutation.mutate({ id: editing.id, values })
+    const prs = editPRText
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
+    const payload: CreateWorkout = {
+      ...values,
+      personalRecords: prs,
+    }
+    updateMutation.mutate({ id: editing.id, values: payload })
   }
 
   // Delete confirmation
@@ -231,8 +285,13 @@ export function App() {
                 <table className="w-full table-auto">
                   <thead>
                     <tr className="text-left text-xs text-muted-foreground">
+                      <th className="px-3 py-2">Type</th>
+                      <th className="px-3 py-2">Intensity</th>
+                      <th className="px-3 py-2">Location</th>
+                      <th className="px-3 py-2">Calories</th>
                       <th className="px-3 py-2">Notes</th>
                       <th className="px-3 py-2">Exercises</th>
+                      <th className="px-3 py-2">PRs</th>
                       <th className="px-3 py-2">Duration</th>
                       <th className="px-3 py-2">Actions</th>
                     </tr>
@@ -240,17 +299,34 @@ export function App() {
                   <tbody>
                     {filtered.map(w => (
                       <tr key={w.id} className="border-t">
+                        <td className="px-3 py-2 align-top">{w.workoutType}</td>
+                        <td className="px-3 py-2 align-top">{w.intensity}</td>
+                        <td className="px-3 py-2 align-top">{w.location}</td>
+                        <td className="px-3 py-2 align-top">{w.caloriesBurned ?? '—'}</td>
                         <td className="px-3 py-2 align-top">
                           <div className="max-w-xs truncate">{w.notes || '—'}</div>
                         </td>
                         <td className="px-3 py-2 align-top">
                           <div className="text-sm">
-                            {w.exercises?.map((e: any, i: number) => (
+                            {w.exercises?.map((e: WorkoutExercise, i: number) => (
                               <div key={e.id ?? i} className="text-xs text-muted-foreground">
                                 {e.name || 'Unnamed'} — {e.sets}×{e.reps}{' '}
                                 {e.weight ? `@ ${e.weight}` : ''}
                               </div>
                             ))}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 align-top">
+                          <div className="text-sm">
+                            {(w.personalRecords ?? []).length === 0 ? (
+                              <span className="text-muted-foreground">—</span>
+                            ) : (
+                              (w.personalRecords ?? []).map((pr, i) => (
+                                <div key={i} className="text-xs text-muted-foreground">
+                                  {pr}
+                                </div>
+                              ))
+                            )}
                           </div>
                         </td>
                         <td className="px-3 py-2 align-top">{w.durationMinutes ?? '—'}</td>
@@ -338,9 +414,141 @@ export function App() {
                 </div>
               </div>
 
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="workoutType">Workout Type</Label>
+                  <select
+                    className="block w-full rounded-md border px-3 py-2"
+                    {...editForm.register('workoutType')}
+                  >
+                    <option value="Cardio">Cardio</option>
+                    <option value="Strength">Strength</option>
+                    <option value="Flexibility">Flexibility</option>
+                    <option value="Sports">Sports</option>
+                  </select>
+                </div>
+
+                <div>
+                  <Label htmlFor="intensity">Intensity</Label>
+                  <select
+                    className="block w-full rounded-md border px-3 py-2"
+                    {...editForm.register('intensity')}
+                  >
+                    <option value="Light">Light</option>
+                    <option value="Moderate">Moderate</option>
+                    <option value="Hard">Hard</option>
+                    <option value="Very Hard">Very Hard</option>
+                  </select>
+                </div>
+
+                <div>
+                  <Label htmlFor="location">Location</Label>
+                  <select
+                    className="block w-full rounded-md border px-3 py-2"
+                    {...editForm.register('location')}
+                  >
+                    <option value="Gym">Gym</option>
+                    <option value="Home">Home</option>
+                    <option value="Outdoor">Outdoor</option>
+                  </select>
+                </div>
+
+                <div>
+                  <Label htmlFor="mood">Mood</Label>
+                  <select
+                    className="block w-full rounded-md border px-3 py-2"
+                    {...editForm.register('mood')}
+                  >
+                    <option value="Energized">Energized</option>
+                    <option value="Normal">Normal</option>
+                    <option value="Tired">Tired</option>
+                    <option value="Exhausted">Exhausted</option>
+                  </select>
+                </div>
+
+                <div>
+                  <Label htmlFor="caloriesBurned">Calories Burned</Label>
+                  <Input
+                    type="number"
+                    {...editForm.register('caloriesBurned', { valueAsNumber: true })}
+                  />
+                </div>
+
+                <div>
+                  <Label>Personal Records (comma-separated)</Label>
+                  <Input value={editPRText} onChange={e => setEditPRText(e.target.value)} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="workoutType">Workout Type</Label>
+                  <select
+                    className="block w-full rounded-md border px-3 py-2"
+                    {...createForm.register('workoutType')}
+                  >
+                    <option value="Cardio">Cardio</option>
+                    <option value="Strength">Strength</option>
+                    <option value="Flexibility">Flexibility</option>
+                    <option value="Sports">Sports</option>
+                  </select>
+                </div>
+
+                <div>
+                  <Label htmlFor="intensity">Intensity</Label>
+                  <select
+                    className="block w-full rounded-md border px-3 py-2"
+                    {...createForm.register('intensity')}
+                  >
+                    <option value="Light">Light</option>
+                    <option value="Moderate">Moderate</option>
+                    <option value="Hard">Hard</option>
+                    <option value="Very Hard">Very Hard</option>
+                  </select>
+                </div>
+
+                <div>
+                  <Label htmlFor="location">Location</Label>
+                  <select
+                    className="block w-full rounded-md border px-3 py-2"
+                    {...createForm.register('location')}
+                  >
+                    <option value="Gym">Gym</option>
+                    <option value="Home">Home</option>
+                    <option value="Outdoor">Outdoor</option>
+                  </select>
+                </div>
+
+                <div>
+                  <Label htmlFor="mood">Mood</Label>
+                  <select
+                    className="block w-full rounded-md border px-3 py-2"
+                    {...createForm.register('mood')}
+                  >
+                    <option value="Energized">Energized</option>
+                    <option value="Normal">Normal</option>
+                    <option value="Tired">Tired</option>
+                    <option value="Exhausted">Exhausted</option>
+                  </select>
+                </div>
+
+                <div>
+                  <Label htmlFor="caloriesBurned">Calories Burned</Label>
+                  <Input
+                    type="number"
+                    {...createForm.register('caloriesBurned', { valueAsNumber: true })}
+                  />
+                </div>
+
+                <div>
+                  <Label>Personal Records (comma-separated)</Label>
+                  <Input value={createPRText} onChange={e => setCreatePRText(e.target.value)} />
+                </div>
+              </div>
+
               <div className="flex items-center gap-2">
-                <Button type="submit" disabled={(createMutation as any).isLoading}>
-                  {(createMutation as any).isLoading ? 'Saving…' : 'Create'}
+                <Button type="submit" disabled={createMutation.status === 'pending'}>
+                  {createMutation.status === 'pending' ? 'Saving…' : 'Create'}
                 </Button>
                 <Button variant="ghost" onClick={() => setIsCreateOpen(false)}>
                   Cancel
@@ -415,8 +623,8 @@ export function App() {
               </div>
 
               <div className="flex items-center gap-2">
-                <Button type="submit" disabled={(updateMutation as any).isLoading}>
-                  {(updateMutation as any).isLoading ? 'Saving…' : 'Save'}
+                <Button type="submit" disabled={updateMutation.status === 'pending'}>
+                  {updateMutation.status === 'pending' ? 'Saving…' : 'Save'}
                 </Button>
                 <Button variant="ghost" onClick={() => setEditing(null)}>
                   Cancel
@@ -442,9 +650,9 @@ export function App() {
               <Button
                 variant="destructive"
                 onClick={() => confirmDelete(deleting.id)}
-                disabled={(deleteMutation as any).isLoading}
+                disabled={deleteMutation.status === 'pending'}
               >
-                {(deleteMutation as any).isLoading ? 'Deleting…' : 'Delete'}
+                {deleteMutation.status === 'pending' ? 'Deleting…' : 'Delete'}
               </Button>
             </div>
           </div>

@@ -14,6 +14,12 @@ export const WorkoutSchema = z.object({
   startedAt: z.date(),
   endedAt: z.date().nullable(),
   durationMinutes: z.number().min(0),
+  workoutType: z.enum(['Cardio', 'Strength', 'Flexibility', 'Sports']),
+  intensity: z.enum(['Light', 'Moderate', 'Hard', 'Very Hard']),
+  location: z.enum(['Gym', 'Home', 'Outdoor']),
+  mood: z.enum(['Energized', 'Normal', 'Tired', 'Exhausted']),
+  caloriesBurned: z.number().min(0).optional(),
+  personalRecords: z.array(z.string()),
   exercises: z.array(WorkoutExerciseSchema),
   notes: z.string().optional(),
 })
