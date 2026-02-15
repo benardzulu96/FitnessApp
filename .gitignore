@@ -24,6 +24,12 @@ build
 .env.production.local
 *.local
 
+# App-level environment files
+apps/*/.env
+apps/*/.env.local
+packages/*/.env
+packages/*/.env.local
+
 # =============================================================================
 # LOGS
 # =============================================================================

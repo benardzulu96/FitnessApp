@@ -78,6 +78,21 @@ cd hytel-react-boilerplate
 pnpm install
 ```
 
+### Environment Setup
+
+Before running the app, set up your Firebase environment variables:
+
+```bash
+# Copy the example env file
+cp apps/web/.env.example apps/web/.env.local
+
+# Edit the file and add your actual Firebase credentials from Firebase Console
+# DO NOT commit your .env.local file to version control
+nano apps/web/.env.local
+```
+
+The `.env.local` file contains sensitive credentials and is automatically ignored by Git (see `.gitignore`).
+
 ### Development
 
 ```bash
